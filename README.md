@@ -1,6 +1,6 @@
 # FleetFlow 🛸 // Smart Logistics & IoT Telemetry Command Center
 
-[![Live Dashboard Demo](https://img.shields.io/badge/Live%20Demo-Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white)](https://fleetflow-1zpy0p78c-zeno29s-projects.vercel.app/)
+[![Live Dashboard Demo](https://img.shields.io/badge/Live%20Demo-Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white)](https://fleetflow-onbi2smti-zeno29s-projects.vercel.app/)
 [![Backend API Status](https://img.shields.io/badge/API%20Status-Render-46E3B7?style=for-the-badge&logo=render&logoColor=white)](https://fleetflow-bi6n.onrender.com/api/status)
 
 FleetFlow is a state-of-the-art **Smart Logistics & IoT Telemetry Command Center** built using the MERN stack. Designed for high-stress operations environments, it features real-time WebSocket telemetry tracking, interactive geospatial mapping, dynamic incident alarm logging, and historical sensor analytics.
