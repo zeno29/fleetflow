@@ -1,0 +1,11 @@
+{
+  "name": "fleetflow-root",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Smart Logistics & IoT Telemetry Dashboard Monorepo",
+  "scripts": {
+    "setup": "npm install --prefix backend && npm install --prefix frontend",
+    "server": "npm run dev --prefix backend",
+    "client": "npm run dev --prefix frontend"
+  }
+}
