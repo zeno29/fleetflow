@@ -22,6 +22,24 @@ const CITY_COORDINATES = {
   "Hyderabad": [17.3850, 78.4867],
 };
 
+const seedVehicles = [
+  { _id: "v_1", vehicleId: "TRK-8821", driverName: "Rajesh Kumar", phone: "+91 98765 43210", status: "Active", batteryLevel: 98, speed: 65, temperature: 3.2, humidity: 42, coordinates: [19.0760, 72.8777], route: "Mumbai to Pune", alertCount: 0 },
+  { _id: "v_2", vehicleId: "TRK-4409", driverName: "Amit Singh", phone: "+91 98123 45678", status: "Active", batteryLevel: 85, speed: 82, temperature: 4.8, humidity: 48, coordinates: [12.9716, 77.5946], route: "Bangalore to Chennai", alertCount: 1 },
+  { _id: "v_3", vehicleId: "TRK-1092", driverName: "Vikram Rathore", phone: "+91 99887 76655", status: "Idle", batteryLevel: 100, speed: 0, temperature: 2.1, humidity: 39, coordinates: [28.7041, 77.1025], route: "Delhi Depot", alertCount: 0 },
+  { _id: "v_4", vehicleId: "TRK-5572", driverName: "Sanjay Dutt", phone: "+91 97766 55443", status: "Active", batteryLevel: 72, speed: 70, temperature: 1.5, humidity: 35, coordinates: [17.3850, 78.4867], route: "Hyderabad to Bangalore", alertCount: 0 }
+];
+
+const seedShipments = [
+  { _id: "s_1", shipmentId: "SH-90021", vehicleId: "TRK-8821", cargoType: "Pharmaceuticals (Vaccines)", origin: "Mumbai", destination: "Pune", status: "In Transit", temperatureLimit: { min: 2, max: 8 }, weight: 450, priority: "Critical" },
+  { _id: "s_2", shipmentId: "SH-44102", vehicleId: "TRK-4409", cargoType: "Fresh Produce (Organic Berries)", origin: "Bangalore", destination: "Chennai", status: "In Transit", temperatureLimit: { min: 0, max: 4 }, weight: 1200, priority: "High" },
+  { _id: "s_3", shipmentId: "SH-10119", vehicleId: "TRK-1092", cargoType: "Electronics (Microchips)", origin: "Delhi", destination: "Delhi Depot", status: "Delivered", temperatureLimit: { min: 15, max: 25 }, weight: 200, priority: "Medium" },
+  { _id: "s_4", shipmentId: "SH-55110", vehicleId: "TRK-5572", cargoType: "Frozen Seafood", origin: "Hyderabad", destination: "Bangalore", status: "In Transit", temperatureLimit: { min: -18, max: -12 }, weight: 3200, priority: "High" }
+];
+
+const seedAlerts = [
+  { _id: "a_1", vehicleId: "TRK-4409", type: "Temperature Anomaly", message: "Cargo temperature reached 4.8°C (Max limit: 4°C)", severity: "Critical", status: "Active", timestamp: new Date().toISOString() }
+];
+
 function MapRecenter({ coordinates }) {
   const map = useMap();
   useEffect(() => {
@@ -40,6 +58,7 @@ export default function App() {
   const [dbMode, setDbMode] = useState("Connecting...");
   const [socketConnected, setSocketConnected] = useState(false);
   const [telemetryHistory, setTelemetryHistory] = useState({});
+  const [isStandalone, setIsStandalone] = useState(false);
 
   const [origin, setOrigin] = useState('Mumbai');
   const [destination, setDestination] = useState('Pune');
@@ -74,72 +93,253 @@ export default function App() {
         if (vehiclesRes.length > 0) {
           setSelectedVehicleId(vehiclesRes[0].vehicleId);
         }
+
+        // Establish WebSockets if REST succeeded
+        connectSockets();
       } catch (err) {
-        console.error("API fetching error:", err);
+        console.warn("Backend server not reached. Switching to Standalone Client Operations Mode (Recruiter Proof)!");
+        setIsStandalone(true);
+        setDbMode("In-Browser DB");
+        setSocketConnected(true); // Show connected indicator for standalone ease
+        
+        // Seed local state
+        setVehicles(seedVehicles);
+        setShipments(seedShipments);
+        setAlerts(seedAlerts);
+        setSelectedVehicleId(seedVehicles[0].vehicleId);
+
+        const initialHistory = {};
+        seedVehicles.forEach(v => {
+          initialHistory[v.vehicleId] = [
+            { time: '14:00', temp: v.temperature - 0.2, speed: v.speed - 5, humidity: v.humidity },
+            { time: '14:01', temp: v.temperature - 0.1, speed: v.speed - 2, humidity: v.humidity },
+            { time: '14:02', temp: v.temperature, speed: v.speed, humidity: v.humidity }
+          ];
+        });
+        setTelemetryHistory(initialHistory);
       }
     };
 
-    fetchData();
+    const connectSockets = () => {
+      socketRef.current = io(SOCKET_URL);
 
-    socketRef.current = io(SOCKET_URL);
-
-    socketRef.current.on('connect_status', (status) => {
-      setSocketConnected(true);
-      setDbMode(status.dbMode);
-    });
-
-    socketRef.current.on('connect', () => {
-      setSocketConnected(true);
-    });
-
-    socketRef.current.on('disconnect', () => {
-      setSocketConnected(false);
-    });
-
-    socketRef.current.on('telemetry_update', (updatedVehicle) => {
-      setVehicles(prev => prev.map(v => 
-        v.vehicleId === updatedVehicle.vehicleId ? updatedVehicle : v
-      ));
-
-      setTelemetryHistory(prev => {
-        const history = prev[updatedVehicle.vehicleId] || [];
-        const newHistory = [...history, {
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-          temp: updatedVehicle.temperature,
-          speed: updatedVehicle.speed,
-          humidity: updatedVehicle.humidity
-        }].slice(-10);
-        return { ...prev, [updatedVehicle.vehicleId]: newHistory };
+      socketRef.current.on('connect_status', (status) => {
+        setSocketConnected(true);
+        setDbMode(status.dbMode);
       });
-    });
 
-    socketRef.current.on('new_alert', (newAlert) => {
-      setAlerts(prev => [newAlert, ...prev]);
-    });
+      socketRef.current.on('connect', () => {
+        setSocketConnected(true);
+      });
 
-    socketRef.current.on('alert_resolved', ({ alertId, vehicleId }) => {
-      setAlerts(prev => prev.filter(a => a._id !== alertId));
-      setVehicles(prev => prev.map(v => 
-        v.vehicleId === vehicleId ? { ...v, alertCount: 0 } : v
-      ));
-    });
+      socketRef.current.on('disconnect', () => {
+        setSocketConnected(false);
+      });
 
-    socketRef.current.on('new_shipment', (newShipment) => {
-      setShipments(prev => [newShipment, ...prev]);
-    });
+      socketRef.current.on('telemetry_update', (updatedVehicle) => {
+        setVehicles(prev => prev.map(v => 
+          v.vehicleId === updatedVehicle.vehicleId ? updatedVehicle : v
+        ));
 
-    socketRef.current.on('new_vehicle', (newVehicle) => {
-      setVehicles(prev => [newVehicle, ...prev]);
-      setSelectedVehicleId(newVehicle.vehicleId);
-    });
+        updateHistoryArray(updatedVehicle);
+      });
+
+      socketRef.current.on('new_alert', (newAlert) => {
+        setAlerts(prev => [newAlert, ...prev]);
+      });
+
+      socketRef.current.on('alert_resolved', ({ alertId, vehicleId }) => {
+        setAlerts(prev => prev.filter(a => a._id !== alertId));
+        setVehicles(prev => prev.map(v => 
+          v.vehicleId === vehicleId ? { ...v, alertCount: 0 } : v
+        ));
+      });
+
+      socketRef.current.on('new_shipment', (newShipment) => {
+        setShipments(prev => [newShipment, ...prev]);
+      });
+
+      socketRef.current.on('new_vehicle', (newVehicle) => {
+        setVehicles(prev => [newVehicle, ...prev]);
+        setSelectedVehicleId(newVehicle.vehicleId);
+      });
+    };
+
+    fetchData();
 
     return () => {
       if (socketRef.current) socketRef.current.disconnect();
     };
   }, []);
 
+  const updateHistoryArray = (updatedVehicle) => {
+    setTelemetryHistory(prev => {
+      const history = prev[updatedVehicle.vehicleId] || [];
+      const newHistory = [...history, {
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        temp: updatedVehicle.temperature,
+        speed: updatedVehicle.speed,
+        humidity: updatedVehicle.humidity
+      }].slice(-10);
+      return { ...prev, [updatedVehicle.vehicleId]: newHistory };
+    });
+  };
+
+  // Standalone browser client simulation loop (runs ONLY if backend is offline/GitHub Pages)
+  useEffect(() => {
+    if (!isStandalone) return;
+
+    const interval = setInterval(() => {
+      setVehicles(prevVehicles => {
+        return prevVehicles.map(vehicle => {
+          if (vehicle.status !== "Active") return vehicle;
+
+          let latChange = (Math.random() - 0.5) * 0.005;
+          let lngChange = (Math.random() - 0.5) * 0.005;
+          
+          const destination = vehicle.route ? vehicle.route.split(" to ")[1] : null;
+          if (destination && CITY_COORDINATES[destination]) {
+            const destCoords = CITY_COORDINATES[destination];
+            latChange = (destCoords[0] - vehicle.coordinates[0]) * 0.01 + (Math.random() - 0.5) * 0.001;
+            lngChange = (destCoords[1] - vehicle.coordinates[1]) * 0.01 + (Math.random() - 0.5) * 0.001;
+          }
+
+          const newCoordinates = [
+            vehicle.coordinates[0] + latChange,
+            vehicle.coordinates[1] + lngChange
+          ];
+
+          const speedDelta = (Math.random() - 0.5) * 5;
+          let newSpeed = Math.max(50, Math.min(95, Math.round(vehicle.speed + speedDelta)));
+
+          const tempDelta = (Math.random() - 0.5) * 0.2;
+          let newTemp = parseFloat((vehicle.temperature + tempDelta).toFixed(2));
+
+          const humidityDelta = Math.round((Math.random() - 0.5) * 2);
+          let newHumidity = Math.max(25, Math.min(80, vehicle.humidity + humidityDelta));
+
+          let newBattery = Math.max(5, vehicle.batteryLevel - (Math.random() > 0.8 ? 1 : 0));
+
+          let alertCount = vehicle.alertCount;
+
+          // Trigger anomalies client-side
+          if (alertCount === 0 && Math.random() < 0.05) {
+            const isTempAnomaly = Math.random() > 0.5;
+            let alertType = "";
+            let alertMessage = "";
+            let severity = "High";
+
+            if (isTempAnomaly) {
+              newTemp += 3.5;
+              alertType = "Temperature Anomaly";
+              alertMessage = `Cargo temperature exceeded critical threshold. Reading: ${newTemp}°C`;
+              severity = "Critical";
+            } else {
+              newSpeed = 105;
+              alertType = "Overspeeding Warning";
+              alertMessage = `Vehicle traveling at dangerous speed: ${newSpeed} km/h (Limit: 80 km/h)`;
+            }
+
+            const clientAlertId = "ca_" + Math.random().toString(36).substr(2, 9);
+            const clientAlert = {
+              _id: clientAlertId,
+              vehicleId: vehicle.vehicleId,
+              type: alertType,
+              message: alertMessage,
+              severity,
+              status: "Active",
+              timestamp: new Date().toISOString()
+            };
+
+            setAlerts(prev => [clientAlert, ...prev]);
+            alertCount = 1;
+          }
+
+          const updated = {
+            ...vehicle,
+            coordinates: newCoordinates,
+            speed: newSpeed,
+            temperature: newTemp,
+            humidity: newHumidity,
+            batteryLevel: newBattery,
+            alertCount
+          };
+
+          // Update telemetry chart history array
+          setTimeout(() => updateHistoryArray(updated), 0);
+
+          return updated;
+        });
+      });
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [isStandalone]);
+
   const handleDispatch = async (e) => {
     e.preventDefault();
+
+    if (isStandalone) {
+      // In-browser mock dispatching
+      const shipmentId = "SH-" + Math.floor(10000 + Math.random() * 90000);
+      const vehicleId = "TRK-" + Math.floor(1000 + Math.random() * 9000);
+      const startCoords = CITY_COORDINATES[origin] || [21.1458, 79.0882];
+      
+      let tempLimits = { min: 15, max: 25 };
+      if (cargoType.toLowerCase().includes("pharmaceutical") || cargoType.toLowerCase().includes("vaccine")) {
+        tempLimits = { min: 2, max: 8 };
+      } else if (cargoType.toLowerCase().includes("produce") || cargoType.toLowerCase().includes("fruit")) {
+        tempLimits = { min: 0, max: 4 };
+      } else if (cargoType.toLowerCase().includes("seafood") || cargoType.toLowerCase().includes("frozen")) {
+        tempLimits = { min: -22, max: -15 };
+      }
+
+      const driverNames = ["Ramesh Kumar", "Vikram Rathore", "Gurpreet Singh", "Karan Johar", "Arjun Patel", "Vijay Mallya"];
+      const randomDriver = driverNames[Math.floor(Math.random() * driverNames.length)];
+      const randomPhone = "+91 9" + Math.floor(100000000 + Math.random() * 900000000);
+
+      const clientVehicle = {
+        _id: "cv_" + Math.random().toString(36).substr(2, 9),
+        vehicleId,
+        driverName: randomDriver,
+        phone: randomPhone,
+        status: "Active",
+        batteryLevel: 100,
+        speed: 65,
+        temperature: (tempLimits.min + tempLimits.max) / 2,
+        humidity: 40,
+        coordinates: startCoords,
+        route: `${origin} to ${destination}`,
+        alertCount: 0
+      };
+
+      const clientShipment = {
+        _id: "cs_" + Math.random().toString(36).substr(2, 9),
+        shipmentId,
+        vehicleId,
+        cargoType,
+        origin,
+        destination,
+        status: "In Transit",
+        temperatureLimit: tempLimits,
+        weight: Number(weight) || 500,
+        priority
+      };
+
+      setVehicles(prev => [clientVehicle, ...prev]);
+      setShipments(prev => [clientShipment, ...prev]);
+      setSelectedVehicleId(vehicleId);
+      
+      // Initialize charts history
+      setTelemetryHistory(prev => ({
+        ...prev,
+        [vehicleId]: [
+          { time: '14:02', temp: clientVehicle.temperature, speed: clientVehicle.speed, humidity: 40 }
+        ]
+      }));
+      return;
+    }
+
     try {
       const response = await fetch(`${API_URL}/shipments`, {
         method: 'POST',
@@ -155,6 +355,20 @@ export default function App() {
   };
 
   const handleResolveAlert = async (id) => {
+    if (isStandalone) {
+      // In-browser mock alert resolution
+      const alertToResolve = alerts.find(a => a._id === id);
+      if (alertToResolve) {
+        setAlerts(prev => prev.filter(a => a._id !== id));
+        setVehicles(prev => prev.map(v => 
+          v.vehicleId === alertToResolve.vehicleId 
+            ? { ...v, alertCount: 0, speed: 65, temperature: 3.0 } 
+            : v
+        ));
+      }
+      return;
+    }
+
     try {
       await fetch(`${API_URL}/alerts/${id}/resolve`, { method: 'POST' });
     } catch (err) {
@@ -237,7 +451,7 @@ export default function App() {
             <div className="vehicles-list">
               {vehicles.map((vehicle) => (
                 <div 
-                  key={vehicle._id} 
+                  key={vehicle._id || vehicle.vehicleId} 
                   className={`vehicle-card ${selectedVehicleId === vehicle.vehicleId ? 'selected' : ''}`}
                   onClick={() => setSelectedVehicleId(vehicle.vehicleId)}
                 >
@@ -358,7 +572,7 @@ export default function App() {
 
               {vehicles.map((v) => (
                 <Marker 
-                  key={v._id} 
+                  key={v._id || v.vehicleId} 
                   position={v.coordinates} 
                   icon={createVehicleMarker(v)}
                 >
