@@ -74,6 +74,10 @@ body {
   text-shadow: 0 0 10px rgba(244, 63, 94, 0.4);
 }
 
+.glow-amber {
+  text-shadow: 0 0 10px rgba(245, 158, 11, 0.4);
+}
+
 /* Header Panel Styles */
 .header-panel {
   display: flex;

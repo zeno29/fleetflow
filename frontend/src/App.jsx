@@ -51,14 +51,24 @@ function MapRecenter({ coordinates }) {
 }
 
 export default function App() {
-  const [vehicles, setVehicles] = useState([]);
-  const [shipments, setShipments] = useState([]);
-  const [alerts, setAlerts] = useState([]);
-  const [selectedVehicleId, setSelectedVehicleId] = useState(null);
+  const [vehicles, setVehicles] = useState(seedVehicles);
+  const [shipments, setShipments] = useState(seedShipments);
+  const [alerts, setAlerts] = useState(seedAlerts);
+  const [selectedVehicleId, setSelectedVehicleId] = useState(seedVehicles[0].vehicleId);
   const [dbMode, setDbMode] = useState("Connecting...");
   const [socketConnected, setSocketConnected] = useState(false);
-  const [telemetryHistory, setTelemetryHistory] = useState({});
-  const [isStandalone, setIsStandalone] = useState(false);
+  const [telemetryHistory, setTelemetryHistory] = useState(() => {
+    const initialHistory = {};
+    seedVehicles.forEach(v => {
+      initialHistory[v.vehicleId] = [
+        { time: '14:00', temp: v.temperature - 0.2, speed: v.speed - 5, humidity: v.humidity },
+        { time: '14:01', temp: v.temperature - 0.1, speed: v.speed - 2, humidity: v.humidity },
+        { time: '14:02', temp: v.temperature, speed: v.speed, humidity: v.humidity }
+      ];
+    });
+    return initialHistory;
+  });
+  const [isStandalone, setIsStandalone] = useState(true);
 
   const [origin, setOrigin] = useState('Mumbai');
   const [destination, setDestination] = useState('Pune');
@@ -69,16 +79,36 @@ export default function App() {
   const socketRef = useRef(null);
 
   useEffect(() => {
+    let active = true;
+    let pollInterval = null;
+
     const fetchData = async () => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+
       try {
         const [vehiclesRes, shipmentsRes, alertsRes] = await Promise.all([
-          fetch(`${API_URL}/vehicles`).then(r => r.json()),
-          fetch(`${API_URL}/shipments`).then(r => r.json()),
-          fetch(`${API_URL}/alerts`).then(r => r.json())
+          fetch(`${API_URL}/vehicles`, { signal: controller.signal }).then(r => {
+            if (!r.ok) throw new Error("Failed to fetch vehicles");
+            return r.json();
+          }),
+          fetch(`${API_URL}/shipments`, { signal: controller.signal }).then(r => {
+            if (!r.ok) throw new Error("Failed to fetch shipments");
+            return r.json();
+          }),
+          fetch(`${API_URL}/alerts`, { signal: controller.signal }).then(r => {
+            if (!r.ok) throw new Error("Failed to fetch alerts");
+            return r.json();
+          })
         ]);
+        
+        clearTimeout(timeoutId);
+        if (!active) return true;
+
         setVehicles(vehiclesRes);
         setShipments(shipmentsRes);
         setAlerts(alertsRes);
+        setIsStandalone(false);
 
         const initialHistory = {};
         vehiclesRes.forEach(v => {
@@ -91,36 +121,32 @@ export default function App() {
         setTelemetryHistory(initialHistory);
 
         if (vehiclesRes.length > 0) {
-          setSelectedVehicleId(vehiclesRes[0].vehicleId);
+          const matchingVehicleExists = vehiclesRes.some(v => v.vehicleId === selectedVehicleId);
+          if (!matchingVehicleExists) {
+            setSelectedVehicleId(vehiclesRes[0].vehicleId);
+          }
         }
 
-        // Establish WebSockets if REST succeeded
         connectSockets();
+        
+        if (pollInterval) {
+          clearInterval(pollInterval);
+          pollInterval = null;
+        }
+        return true;
       } catch (err) {
-        console.warn("Backend server not reached. Switching to Standalone Client Operations Mode (Recruiter Proof)!");
+        clearTimeout(timeoutId);
+        if (!active) return false;
+        
+        console.warn("Backend server not reached or timed out. Switched to Standalone Recruiter Demo Mode.");
         setIsStandalone(true);
         setDbMode("In-Browser DB");
-        setSocketConnected(true); // Show connected indicator for standalone ease
-        
-        // Seed local state
-        setVehicles(seedVehicles);
-        setShipments(seedShipments);
-        setAlerts(seedAlerts);
-        setSelectedVehicleId(seedVehicles[0].vehicleId);
-
-        const initialHistory = {};
-        seedVehicles.forEach(v => {
-          initialHistory[v.vehicleId] = [
-            { time: '14:00', temp: v.temperature - 0.2, speed: v.speed - 5, humidity: v.humidity },
-            { time: '14:01', temp: v.temperature - 0.1, speed: v.speed - 2, humidity: v.humidity },
-            { time: '14:02', temp: v.temperature, speed: v.speed, humidity: v.humidity }
-          ];
-        });
-        setTelemetryHistory(initialHistory);
+        return false;
       }
     };
 
     const connectSockets = () => {
+      if (socketRef.current) socketRef.current.disconnect();
       socketRef.current = io(SOCKET_URL);
 
       socketRef.current.on('connect_status', (status) => {
@@ -140,7 +166,6 @@ export default function App() {
         setVehicles(prev => prev.map(v => 
           v.vehicleId === updatedVehicle.vehicleId ? updatedVehicle : v
         ));
-
         updateHistoryArray(updatedVehicle);
       });
 
@@ -165,10 +190,25 @@ export default function App() {
       });
     };
 
-    fetchData();
+    // First attempt
+    fetchData().then(success => {
+      if (!success && active) {
+        pollInterval = setInterval(async () => {
+          console.log("Checking if live backend is online...");
+          const connected = await fetchData();
+          if (connected && pollInterval) {
+            console.log("Live backend connected successfully! Disabling demo mode.");
+            clearInterval(pollInterval);
+            pollInterval = null;
+          }
+        }, 12000);
+      }
+    });
 
     return () => {
+      active = false;
       if (socketRef.current) socketRef.current.disconnect();
+      if (pollInterval) clearInterval(pollInterval);
     };
   }, []);
 
@@ -415,8 +455,11 @@ export default function App() {
 
         <div className="stats-bar">
           <div className="stat-item">
-            <span className={`stat-value ${socketConnected ? 'glow-cyan' : 'glow-red'}`} style={{ color: socketConnected ? '#0EA5E9' : '#F43F5E' }}>
-              ● {socketConnected ? 'CONNECTED' : 'OFFLINE'}
+            <span 
+              className={`stat-value ${socketConnected ? 'glow-cyan' : isStandalone ? 'glow-amber' : 'glow-red'}`} 
+              style={{ color: socketConnected ? '#0EA5E9' : isStandalone ? '#F59E0B' : '#F43F5E' }}
+            >
+              ● {socketConnected ? 'LIVE SYNC' : isStandalone ? 'DEMO MODE' : 'OFFLINE'}
             </span>
             <span className="stat-label">Network Sync</span>
           </div>
