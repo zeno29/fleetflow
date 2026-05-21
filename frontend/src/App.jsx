@@ -10,8 +10,8 @@ import {
   Thermometer, Droplets, Battery, Activity, Send, Phone, User
 } from 'lucide-react';
 
-const SOCKET_URL = 'http://localhost:5000';
-const API_URL = 'http://localhost:5000/api';
+const SOCKET_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const API_URL = `${SOCKET_URL}/api`;
 
 const CITY_COORDINATES = {
   "Mumbai": [19.0760, 72.8777],
