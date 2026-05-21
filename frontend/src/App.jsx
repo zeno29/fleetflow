@@ -13,7 +13,6 @@ import {
 const SOCKET_URL = 'http://localhost:5000';
 const API_URL = 'http://localhost:5000/api';
 
-// Center coordinates for Indian cities used for route lines
 const CITY_COORDINATES = {
   "Mumbai": [19.0760, 72.8777],
   "Pune": [18.5204, 73.8567],
@@ -23,7 +22,6 @@ const CITY_COORDINATES = {
   "Hyderabad": [17.3850, 78.4867],
 };
 
-// Map Recenter Helper Component
 function MapRecenter({ coordinates }) {
   const map = useMap();
   useEffect(() => {
@@ -35,7 +33,6 @@ function MapRecenter({ coordinates }) {
 }
 
 export default function App() {
-  // State variables
   const [vehicles, setVehicles] = useState([]);
   const [shipments, setShipments] = useState([]);
   const [alerts, setAlerts] = useState([]);
@@ -44,7 +41,6 @@ export default function App() {
   const [socketConnected, setSocketConnected] = useState(false);
   const [telemetryHistory, setTelemetryHistory] = useState({});
 
-  // Dispatch Form State
   const [origin, setOrigin] = useState('Mumbai');
   const [destination, setDestination] = useState('Pune');
   const [cargoType, setCargoType] = useState('Pharmaceuticals (Vaccines)');
@@ -53,7 +49,6 @@ export default function App() {
 
   const socketRef = useRef(null);
 
-  // 1. Initial Load APIs
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -66,7 +61,6 @@ export default function App() {
         setShipments(shipmentsRes);
         setAlerts(alertsRes);
 
-        // Pre-seed some historical telemetry logs for seed data
         const initialHistory = {};
         vehiclesRes.forEach(v => {
           initialHistory[v.vehicleId] = [
@@ -77,7 +71,6 @@ export default function App() {
         });
         setTelemetryHistory(initialHistory);
 
-        // Auto select first vehicle
         if (vehiclesRes.length > 0) {
           setSelectedVehicleId(vehiclesRes[0].vehicleId);
         }
@@ -88,7 +81,6 @@ export default function App() {
 
     fetchData();
 
-    // 2. Initialize Real-Time WebSockets
     socketRef.current = io(SOCKET_URL);
 
     socketRef.current.on('connect_status', (status) => {
@@ -104,13 +96,11 @@ export default function App() {
       setSocketConnected(false);
     });
 
-    // Real-Time Telemetry Updates
     socketRef.current.on('telemetry_update', (updatedVehicle) => {
       setVehicles(prev => prev.map(v => 
         v.vehicleId === updatedVehicle.vehicleId ? updatedVehicle : v
       ));
 
-      // Append coordinates history for graph drawing
       setTelemetryHistory(prev => {
         const history = prev[updatedVehicle.vehicleId] || [];
         const newHistory = [...history, {
@@ -118,17 +108,15 @@ export default function App() {
           temp: updatedVehicle.temperature,
           speed: updatedVehicle.speed,
           humidity: updatedVehicle.humidity
-        }].slice(-10); // cap history at 10 items for sliding window
+        }].slice(-10);
         return { ...prev, [updatedVehicle.vehicleId]: newHistory };
       });
     });
 
-    // New Alerts Trigger
     socketRef.current.on('new_alert', (newAlert) => {
       setAlerts(prev => [newAlert, ...prev]);
     });
 
-    // Resolved Alerts Listener
     socketRef.current.on('alert_resolved', ({ alertId, vehicleId }) => {
       setAlerts(prev => prev.filter(a => a._id !== alertId));
       setVehicles(prev => prev.map(v => 
@@ -136,7 +124,6 @@ export default function App() {
       ));
     });
 
-    // New Shipment Dispatched
     socketRef.current.on('new_shipment', (newShipment) => {
       setShipments(prev => [newShipment, ...prev]);
     });
@@ -151,7 +138,6 @@ export default function App() {
     };
   }, []);
 
-  // Form Submit Handler
   const handleDispatch = async (e) => {
     e.preventDefault();
     try {
@@ -161,7 +147,6 @@ export default function App() {
         body: JSON.stringify({ origin, destination, cargoType, weight, priority })
       });
       if (response.ok) {
-        // Form reset / visual cue
         console.log("Shipment dispatched successfully!");
       }
     } catch (err) {
@@ -169,7 +154,6 @@ export default function App() {
     }
   };
 
-  // Alert Resolve Handler
   const handleResolveAlert = async (id) => {
     try {
       await fetch(`${API_URL}/alerts/${id}/resolve`, { method: 'POST' });
@@ -178,12 +162,10 @@ export default function App() {
     }
   };
 
-  // State computations
   const activeVehicle = vehicles.find(v => v.vehicleId === selectedVehicleId) || vehicles[0];
   const activeShipment = shipments.find(s => s.vehicleId === selectedVehicleId);
   const activeHistory = activeVehicle ? (telemetryHistory[activeVehicle.vehicleId] || []) : [];
 
-  // Helper to draw custom markers with SVG glows
   const createVehicleMarker = (vehicle) => {
     const isAlert = vehicle.alertCount > 0;
     return L.divIcon({
@@ -194,7 +176,6 @@ export default function App() {
     });
   };
 
-  // Compute route overlay coordinates if a vehicle is selected
   const getRouteCoordinates = () => {
     if (!activeVehicle || !activeShipment) return null;
     const originCoords = CITY_COORDINATES[activeShipment.origin];
@@ -209,7 +190,6 @@ export default function App() {
 
   return (
     <div className="app-container">
-      {/* 1. Header Control Panel */}
       <header className="header-panel">
         <div className="header-title-container">
           <div className="header-logo">🛸</div>
@@ -246,10 +226,8 @@ export default function App() {
         </div>
       </header>
 
-      {/* 2. Main Dashboard Workspace Grid */}
       <main className="dashboard-grid">
         
-        {/* Left Pane: Fleet List */}
         <section className="dashboard-panel" style={{ gridRow: "1" }}>
           <div className="panel-header">
             <h2><Truck size={16} /> Fleet Directory</h2>
@@ -290,7 +268,6 @@ export default function App() {
           </div>
         </section>
 
-        {/* Left Bottom Pane: Dispatch Portal */}
         <section className="dashboard-panel dispatch-panel">
           <div className="panel-header">
             <h2><Send size={16} /> Order & Dispatch</h2>
@@ -355,7 +332,6 @@ export default function App() {
           </div>
         </section>
 
-        {/* Center Panel: Map Container */}
         <section className="dashboard-panel map-panel">
           <div className="panel-header">
             <h2><Navigation size={16} /> Live GPS Route Telemetry</h2>
@@ -367,7 +343,7 @@ export default function App() {
           </div>
           <div style={{ flex: 1, position: 'relative' }}>
             <MapContainer 
-              center={[20.5937, 78.9629]} // Center of India
+              center={[20.5937, 78.9629]} 
               zoom={5} 
               style={{ width: '100%', height: '100%' }}
             >
@@ -376,12 +352,10 @@ export default function App() {
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
               />
 
-              {/* Recenter map when driver selection changes */}
               {activeVehicle && (
                 <MapRecenter coordinates={activeVehicle.coordinates} />
               )}
 
-              {/* All active vehicles */}
               {vehicles.map((v) => (
                 <Marker 
                   key={v._id} 
@@ -400,7 +374,6 @@ export default function App() {
                 </Marker>
               ))}
 
-              {/* Selected Route Polyline Overlay */}
               {routePolyline && (
                 <Polyline 
                   positions={routePolyline} 
@@ -413,7 +386,6 @@ export default function App() {
           </div>
         </section>
 
-        {/* Center Bottom Panel: Telemetry Graphs */}
         <section className="dashboard-panel analytics-panel">
           <div className="panel-header">
             <h2><Activity size={16} /> Telemetry Analytics & Sensor Logs</h2>
@@ -465,10 +437,8 @@ export default function App() {
           </div>
         </section>
 
-        {/* Right Pane: Diagnostic Details & active Alerts */}
         <section className="dashboard-panel" style={{ gridRow: "1 / span 2" }}>
           
-          {/* Active Sensor Readings */}
           <div style={{ padding: '0.8rem 1rem', borderBottom: '1px solid var(--border-color)', background: 'rgba(255,255,255,0.01)' }}>
             <h2 style={{ fontSize: '0.9rem', color: '#FFF', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
               <Activity size={15} /> Sensor Diagnostic
@@ -526,7 +496,6 @@ export default function App() {
             )}
           </div>
 
-          {/* Real-time Alerts Log */}
           <div className="panel-header" style={{ borderTop: '1px solid var(--border-color)' }}>
             <h2 style={{ color: '#F43F5E' }}><ShieldAlert size={16} /> Incident & Alarm Center</h2>
             <span className="status-badge" style={{ background: 'rgba(244,63,94,0.15)', color: '#F43F5E' }}>

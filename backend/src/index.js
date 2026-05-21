@@ -12,15 +12,13 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 app.use(cors({
-  origin: '*', // Dynamic access for local environment setup
+  origin: '*',
   methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS']
 }));
 app.use(express.json());
 
-// Main HTTP Server setup
 const server = http.createServer(app);
 
-// Socket.io initialization
 const io = new Server(server, {
   cors: {
     origin: '*',
@@ -28,17 +26,15 @@ const io = new Server(server, {
   }
 });
 
-// Seed DB & Socket.io connection logic
 io.on('connection', (socket) => {
-  console.log(`📡 Socket connected: ${socket.id}`);
+  console.log(`Socket connected: ${socket.id}`);
   socket.emit('connection_status', { connected: true, dbMode: getDBMode() });
 
   socket.on('disconnect', () => {
-    console.log(`🔌 Socket disconnected: ${socket.id}`);
+    console.log(`Socket disconnected: ${socket.id}`);
   });
 });
 
-// REST Endpoints
 app.get('/api/status', (req, res) => {
   res.json({
     status: "Healthy",
@@ -48,7 +44,6 @@ app.get('/api/status', (req, res) => {
   });
 });
 
-// Get all vehicles
 app.get('/api/vehicles', async (req, res) => {
   try {
     const vehicles = await Vehicle.find({});
@@ -58,7 +53,6 @@ app.get('/api/vehicles', async (req, res) => {
   }
 });
 
-// Get all shipments
 app.get('/api/shipments', async (req, res) => {
   try {
     const shipments = await Shipment.find({});
@@ -68,7 +62,6 @@ app.get('/api/shipments', async (req, res) => {
   }
 });
 
-// Get active alerts
 app.get('/api/alerts', async (req, res) => {
   try {
     const alerts = await Alert.find({ status: "Active" });
@@ -78,20 +71,17 @@ app.get('/api/alerts', async (req, res) => {
   }
 });
 
-// Create/Dispatch a new Shipment & associate a dynamic vehicle
 app.post('/api/shipments', async (req, res) => {
   const { origin, destination, cargoType, weight, priority } = req.body;
 
   if (!origin || !destination || !cargoType) {
-    return res.status(400).json({ error: "Missing required shipment parameters." });
+    return res.status(400).json({ error: "Missing required parameters." });
   }
 
   try {
-    // Generate IDs
     const shipmentId = "SH-" + Math.floor(10000 + Math.random() * 90000);
     const vehicleId = "TRK-" + Math.floor(1000 + Math.random() * 9000);
 
-    // City coordinates lookup for starting position
     const CITY_COORDINATES = {
       "Mumbai": [19.0760, 72.8777],
       "Pune": [18.5204, 73.8567],
@@ -101,10 +91,9 @@ app.post('/api/shipments', async (req, res) => {
       "Hyderabad": [17.3850, 78.4867],
     };
 
-    const startCoords = CITY_COORDINATES[origin] || [21.1458, 79.0882]; // default Nagpur center
+    const startCoords = CITY_COORDINATES[origin] || [21.1458, 79.0882];
 
-    // Determine cargo safe temperature limits based on category
-    let temperatureLimit = { min: 15, max: 25 }; // generic electronics/cargo
+    let temperatureLimit = { min: 15, max: 25 };
     if (cargoType.toLowerCase().includes("pharmaceutical") || cargoType.toLowerCase().includes("vaccine")) {
       temperatureLimit = { min: 2, max: 8 };
     } else if (cargoType.toLowerCase().includes("produce") || cargoType.toLowerCase().includes("fruit")) {
@@ -113,7 +102,6 @@ app.post('/api/shipments', async (req, res) => {
       temperatureLimit = { min: -22, max: -15 };
     }
 
-    // 1. Create matching active Vehicle
     const driverNames = ["Ramesh Kumar", "Vikram Rathore", "Gurpreet Singh", "Karan Johar", "Arjun Patel", "Vijay Mallya"];
     const randomDriver = driverNames[Math.floor(Math.random() * driverNames.length)];
     const randomPhone = "+91 9" + Math.floor(100000000 + Math.random() * 900000000);
@@ -125,14 +113,13 @@ app.post('/api/shipments', async (req, res) => {
       status: "Active",
       batteryLevel: 100,
       speed: 65,
-      temperature: (temperatureLimit.min + temperatureLimit.max) / 2, // start right in the target center
+      temperature: (temperatureLimit.min + temperatureLimit.max) / 2,
       humidity: 40,
       coordinates: startCoords,
       route: `${origin} to ${destination}`,
       alertCount: 0
     });
 
-    // 2. Create Shipment
     const newShipment = await Shipment.create({
       shipmentId,
       vehicleId,
@@ -145,7 +132,6 @@ app.post('/api/shipments', async (req, res) => {
       priority: priority || "Medium"
     });
 
-    // Broadcast new entries via Socket.io
     io.emit('new_shipment', newShipment);
     io.emit('new_vehicle', newVehicle);
 
@@ -155,7 +141,6 @@ app.post('/api/shipments', async (req, res) => {
   }
 });
 
-// Resolve an Alert manually
 app.post('/api/alerts/:id/resolve', async (req, res) => {
   const alertId = req.params.id;
 
@@ -165,15 +150,12 @@ app.post('/api/alerts/:id/resolve', async (req, res) => {
       return res.status(404).json({ error: "Alert not found." });
     }
 
-    // Update alert status
     const updatedAlert = await Alert.findByIdAndUpdate(alertId, { status: "Resolved" }, { new: true });
 
-    // Reset vehicle alert status
     const vehicle = await Vehicle.findOne({ vehicleId: alert.vehicleId });
     if (vehicle) {
-      // Find default limits to reset temperature/speed to normal
-      let resetTemp = 3.0; // safe default
-      let resetSpeed = 65; // safe default
+      let resetTemp = 3.0;
+      let resetSpeed = 65;
 
       await Vehicle.findByIdAndUpdate(vehicle._id, {
         alertCount: 0,
@@ -182,23 +164,19 @@ app.post('/api/alerts/:id/resolve', async (req, res) => {
       });
     }
 
-    // Broadcast alert resolved event
     io.emit('alert_resolved', { alertId, vehicleId: alert.vehicleId });
 
-    // Remove active alert from list by sending refreshed active state or direct notice
     res.json({ success: true, message: "Alert resolved successfully.", alert: updatedAlert });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Boot process
 const startServer = async () => {
   await connectDB();
   
   server.listen(PORT, () => {
-    console.log(`🛸 FleetFlow server running on port: ${PORT}`);
-    // Start background IoT generator
+    console.log(`Server listening on port ${PORT}`);
     startSimulator(io);
   });
 };

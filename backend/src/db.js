@@ -1,6 +1,5 @@
 import mongoose from 'mongoose';
 
-// Initial Seed Data for the In-Memory Database Fallback
 const seedVehicles = [
   { _id: "v_1", vehicleId: "TRK-8821", driverName: "Rajesh Kumar", phone: "+91 98765 43210", status: "Active", batteryLevel: 98, speed: 65, temperature: 3.2, humidity: 42, coordinates: [19.0760, 72.8777], route: "Mumbai to Pune", alertCount: 0 },
   { _id: "v_2", vehicleId: "TRK-4409", driverName: "Amit Singh", phone: "+91 98123 45678", status: "Active", batteryLevel: 85, speed: 82, temperature: 4.8, humidity: 48, coordinates: [12.9716, 77.5946], route: "Bangalore to Chennai", alertCount: 1 },
@@ -19,7 +18,6 @@ const seedAlerts = [
   { _id: "a_1", vehicleId: "TRK-4409", type: "Temperature Anomaly", message: "Cargo temperature reached 4.8°C (Max limit: 4°C)", severity: "Critical", status: "Active", timestamp: new Date().toISOString() }
 ];
 
-// Simple in-memory mock database models
 class MockModel {
   constructor(name, initialData) {
     this.name = name;
@@ -48,7 +46,6 @@ class MockModel {
     const index = this.data.findIndex(item => item._id === id);
     if (index === -1) return null;
     
-    // Handle mongoose update operators if any (e.g. $set, $push)
     let parsedUpdate = { ...update };
     if (update.$set) parsedUpdate = { ...parsedUpdate, ...update.$set };
 
@@ -83,10 +80,8 @@ class MockModel {
   }
 }
 
-// Global state holding if we are in Mock mode
 let isMockMode = false;
 
-// Create Mock Databases
 const MockVehicle = new MockModel("Vehicle", seedVehicles);
 const MockShipment = new MockModel("Shipment", seedShipments);
 const MockAlert = new MockModel("Alert", seedAlerts);
@@ -95,20 +90,17 @@ export const connectDB = async () => {
   const mongoURI = process.env.MONGO_URI || "mongodb://localhost:27017/fleetflow";
   try {
     mongoose.set('strictQuery', false);
-    // 3 second timeout for quick fallback
     await mongoose.connect(mongoURI, {
       serverSelectionTimeoutMS: 3000
     });
-    console.log("🟢 Connected to MongoDB Database successfully!");
+    console.log("Connected to MongoDB successfully");
     isMockMode = false;
   } catch (error) {
-    console.warn("⚠️  MongoDB connection failed or unavailable:", error.message);
-    console.warn("🚀 FleetFlow is falling back to an In-Memory Virtual Database. Excellent for quick local testing!");
+    console.warn("MongoDB connection failed, falling back to in-memory store:", error.message);
     isMockMode = true;
   }
 };
 
-// Mongoose schema definitions
 const vehicleSchema = new mongoose.Schema({
   vehicleId: { type: String, required: true, unique: true },
   driverName: String,
@@ -147,7 +139,6 @@ const alertSchema = new mongoose.Schema({
   timestamp: { type: Date, default: Date.now }
 }, { timestamps: true });
 
-// Export schemas or Mock Adapters dynamically
 const MongoVehicle = mongoose.model('Vehicle', vehicleSchema);
 const MongoShipment = mongoose.model('Shipment', shipmentSchema);
 const MongoAlert = mongoose.model('Alert', alertSchema);
@@ -170,4 +161,4 @@ export const Alert = new Proxy({}, {
   }
 });
 
-export const getDBMode = () => isMockMode ? "In-Memory Virtual" : "MDB Cloud/Local";
+export const getDBMode = () => isMockMode ? "In-Memory" : "MongoDB";
